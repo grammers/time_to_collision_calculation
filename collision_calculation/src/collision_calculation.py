@@ -7,6 +7,7 @@ from collections import deque
 import math
 
 sub_bbox_topic = '/bb/trace'
+pub_extracted_data = '/cc/trace'
 # camera information
 HIGHT = 480.0
 WITH = 856.0
@@ -29,8 +30,12 @@ class Traces():
         self.d_area = 0.0
 
         self.center = deque(maxlen=AVG_LEN)
+        self.direction = [0,0]
 
         self.frame_of_update = frame
+
+        self.hight = 0.0
+        self.withe = 0.0
 
     def avg_dist(self):
         dist = 0.0
@@ -42,19 +47,23 @@ class Traces():
         self.center.append([
             (pos.x + size.x / 2) - (WITH / 2), 
             (pos.y + size.y / 2) - (HIGHT / 2)])
+        self.direction = [self.center[0][0] - self.center[-1][0], self.center[0][1] - self.center[-1][1]]
         
 
     def area_update(self, a):
         self.area.append(a)
         self.d_area = (self.area[-1] - self.area[0]) / len(self.area)
 
-    def update(self, dist, frame):
+    def update(self, dist, frame, dimentions):
         self.distance.append(dist)
         self.speed = self.distance[-1] - self.distance[0]
         if self.speed != 0:
             self.time = self.avg_dist() / self.speed
 
         self.frame_of_update = frame
+
+        self.withe = dimentions.x
+        self.hight = dimentions.y
 
     def is_active(self, curent):
         return self.frame_of_update < curent - 1
@@ -67,21 +76,39 @@ class Traces():
 
     def get_time(self):
         return self.time
+    
+    def to_msg(self):
+        msg = BoundingBox()
+        #msg.header = header
+        msg.label = self.id
+        msg.value = self.d_area
 
+        msg.pose.position.x = self.center[-1][0] 
+        msg.pose.position.y = self.center[-1][1]
+        msg.pose.position.z = 0 
+    
+        msg.pose.orientation.x = self.direction[0] 
+        msg.pose.orientation.y = self.direction[1]
+        msg.pose.orientation.z = 0
+        msg.pose.orientation.w = 0
+
+        msg.dimensions.x = self.withe
+        msg.dimensions.y = self.hight
+        msg.dimensions.z = 0
+        return msg
+        
     def __str__(self):
-        direction = [self.center[0][0] - self.center[-1][0], self.center[0][1] - self.center[-1][1]]
-        return "ID: " + str(self.id) + "\t speed: " + str(self.time) + "\t time: " + str(self.speed) + "\t area: " + str(self.d_area) + "\t direction: " + str(direction)
+        return "ID: " + str(self.id) + "\t speed: " + str(self.time) + "\t time: " + str(self.speed) + "\t area: " + str(self.d_area) + "\t direction: " + str(self.direction)
 
 class ROS_runner():
     def __init__(self):
         self.bbox_sub = rospy.Subscriber(
             sub_bbox_topic, BoundingBoxArray, self.callback)
         
-        self.bboxes = {}
+        self.extracted_data_pub = rospy.Publisher(
+            pub_extracted_data, BoundingBoxArray, queue_size=10)
 
-        self.distance = {}
-        self.speed = {}
-        self.time = {}
+        self.bboxes = {}
 
     def distance_calk(self, box):
         if box.pose.position.y + box.dimensions.y < MID:
@@ -101,13 +128,21 @@ class ROS_runner():
         d2 = hight2 / math.atan(hight2 * HIGHT_ANGLE)
         return (d1 + d2) / 2
 
+    def msg_builder(self, header):
+        msg = BoundingBoxArray()
+        msg.header =  header
+
+        for b in self.bboxes:
+            msg.boxes.append(self.bboxes[b].to_msg())
+        return msg
+
     def callback(self, data):
         print('callback')
         for box in data.boxes:
             new_distance = self.distance_calk(box)
             
             if box.label in self.bboxes:
-                self.bboxes[box.label].update(new_distance, data.header.seq)
+                self.bboxes[box.label].update(new_distance, data.header.seq, box.dimensions)
             else:
                 self.bboxes.update({box.label : Traces(box.label, new_distance, data.header.seq)})
 
@@ -124,6 +159,8 @@ class ROS_runner():
             
         for b in to_del:
             self.bboxes.pop(b)
+
+        self.extracted_data_pub.publish(self.msg_builder(data.header))
         
         
 if __name__ == "__main__":
