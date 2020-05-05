@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>bb_tracing</name>
+  <name>collision_calculation</name>
   <version>0.0.0</version>
-  <description>creat and track boundig boxes for om ros image.</description>
+  <description>Calculate time entil a colithon ocure</description>
 
   <maintainer email="samkar-4@student.ltu.se">gramemrs</maintainer>
 

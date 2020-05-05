@@ -2,6 +2,9 @@
 
 import rospy
 from sensor_msgs.msg import Image
+#from bb_tracing.msg import BoundingBox, BoundingBoxArray
+from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+
 
 import os
 import sys
@@ -20,8 +23,10 @@ import cv2
 from cv_bridge import CvBridge
 
 # theses should be lanch param
-sub_image_topic = "/bebop/image_raw"
-pub_image_topic = "/image_box"
+#sub_image_topic = "/bebop/image_raw"
+sub_image_topic = "/image_slow"
+pub_image_topic = "/bb/image_box"
+pub_trace = "/bb/trace"
 path = '/home/grammers/catkin_ws/src/nearCollision/data/'
 conf_thres = 0.5
 NMS_THRESH = 0.3
@@ -33,9 +38,31 @@ class Trace:
         self.id = Trace.ID
 
         self.bbox = box
+        self.active = True
 
     def update(self, det):
+        self.active = True
         self.bbox = det
+
+    def to_msg(self):
+        msg = BoundingBox()
+        msg.label = self.id
+        msg.value = 0
+        
+        msg.pose.position.x = self.bbox[0]
+        msg.pose.position.y = self.bbox[1]
+        msg.pose.position.z = 0
+
+        msg.pose.orientation.x = 0 
+        msg.pose.orientation.y = 0 
+        msg.pose.orientation.x = 0 
+        msg.pose.orientation.w = 0 
+
+        msg.dimensions.x = self.bbox[2] - self.bbox[0]
+        msg.dimensions.y = self.bbox[3] - self.bbox[1]
+        msg.dimensions.z = 0
+
+        return msg
 
 class ROS_runner:
     def __init__(self):
@@ -48,8 +75,13 @@ class ROS_runner:
         self.image_sub = rospy.Subscriber(
             sub_image_topic, Image, self.callback)
 
+        # visualisation
         self.image_pub = rospy.Publisher(
             pub_image_topic, Image, queue_size = 10)
+
+        # acctual result
+        self.trace_pub = rospy.Publisher(
+            pub_trace, BoundingBoxArray, queue_size = 10)
 
         ### netwrk for fast rcnn ###
         cfg.TEST.HAS_RPN = True
@@ -69,6 +101,16 @@ class ROS_runner:
         self.saver = tf.train.Saver()
         self.saver.restore(self.sess, self.tfmodel)
         ### end ###
+
+    def msg_builder(self, header):
+        msg = BoundingBoxArray()
+        msg.header = header
+        
+        for t in self.trace:
+            if t.active:
+                msg.boxes.append(t.to_msg())
+            
+        return msg
 
     def det_to_trace(self, dets):
 
@@ -111,8 +153,10 @@ class ROS_runner:
         while i > 0:
             i -= 1
             if used_t[i]:
-                print(used_t)
-                self.trace.pop(i)
+                if self.trace[i].active:
+                    self.trace[i].active = False
+                else:
+                    self.trace.pop(i)
                 #delet trace
 
         for j, d in enumerate(dets):
@@ -139,10 +183,10 @@ class ROS_runner:
 
         return trace_min, det_min
 
-    def vis_detections(self, im, class_name, dets, time, thresh=0.5):
+    def vis_detections(self, dets, thresh=0.5):
         inds = np.where(dets[:, -1] >= thresh)[0]
         if len(inds) == 0:
-            return im
+            return 
         
         box = []
         for i in inds:
@@ -151,12 +195,14 @@ class ROS_runner:
             score = dets[i,-1]
             
             # bbox[x,y, x,y]
-            cv2.rectangle(im, (int(bbox[0]), int(bbox[1])),
-                (int(bbox[2]), int(bbox[3])),
-                (255, 255, 0), 2)
+            #cv2.rectangle(im, (int(bbox[0]), int(bbox[1])),
+            #    (int(bbox[2]), int(bbox[3])),
+            #    (255, 255, 0), 2)
             
         self.det_to_trace(box)
 
+
+    def visualize(self, im):
         for t in self.trace:
             # bbox[x,y, x,y]
             cv2.rectangle(im, (int(t.bbox[0]), int(t.bbox[1])),
@@ -167,10 +213,7 @@ class ROS_runner:
                 cv2.FONT_HERSHEY_SIMPLEX, int(1), (255, 0, 0), 
                 int(2))
             
-
-
         return im
-
 
 
     def callback(self, data):
@@ -187,9 +230,13 @@ class ROS_runner:
         dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(np.float32)
         keep = nms(dets, NMS_THRESH)
         dets = dets[keep, :]
-        cv_image = self.vis_detections(cv_image, cls, dets, 0, thresh=conf_thres)
+        self.vis_detections(dets, thresh=conf_thres )
+        
+        self.visualize(cv_image)
 
-
+        trace_message = self.msg_builder(data.header)
+        
+        self.trace_pub.publish(trace_message)
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
 
 
