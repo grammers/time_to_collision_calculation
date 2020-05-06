@@ -40,8 +40,8 @@ class Traces():
 
         self.frame_of_update = frame
 
-        self.hight = 0.0
         self.withe = 0.0
+        self.hight = 0.0
 
     def avg_dist(self):
         dist = 0.0
@@ -59,7 +59,16 @@ class Traces():
 
     def area_update(self, a):
         self.area.append(a)
-        self.d_area = (self.area[-1] - self.area[0]) / len(self.area)
+        self.d_area = (self.area[-1] - self.area[0]) / 1000# / len(self.area)
+
+        if (self.center[-1][0] + (self.withe / 2)) > 0.92 or (self.center[-1][1] + (self.hight / 2)) > 0.85:
+            self.d_area += 0.5
+        if (self.center[-1][0] + (self.withe / 2)) < 0.08 or (self.center[-1][1] + (self.hight / 2)) < 0.15:
+            self.d_area += 0.5
+            
+        if self.d_area > 1:
+            self.d_area = 1
+        
 
     def update(self, dist, frame, dimentions):
         self.distance.append(dist)
@@ -144,7 +153,7 @@ class ROS_runner():
         return msg
 
     def callback(self, data):
-        print('callback')
+        #print('callback')
         for box in data.boxes:
             new_distance = self.distance_calk(box)
             
@@ -154,13 +163,13 @@ class ROS_runner():
                 self.bboxes.update({box.label : Traces(box.label, new_distance, data.header.seq)})
 
 
-            self.bboxes[box.label].area_update(box.dimensions.y * box.dimensions.x)
-
             self.bboxes[box.label].update_center(box.pose.position, box.dimensions)
+            self.bboxes[box.label].area_update((box.dimensions.y * 100) * (box.dimensions.x * 100))
+
 
         to_del = []
         for b in self.bboxes:
-            print(self.bboxes[b])
+            #print(self.bboxes[b])
             if self.bboxes[b].is_active(data.header.seq):
                 to_del.append(b)
             
