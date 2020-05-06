@@ -8,11 +8,17 @@ import math
 
 sub_bbox_topic = '/bb/trace'
 pub_extracted_data = '/cc/trace'
-# camera information
-HIGHT = 480.0
-WITH = 856.0
-MID = HIGHT / 2.0
+## camera information
+#bebop
+#HIGHT = 480.0
+#WITH = 856.0
+#HIGHT_ANGLE = 39.3
+#indian fead
+HIGHT = 272.0
+WITH = 480.0
 HIGHT_ANGLE = 39.3
+
+MID = HIGHT / 2.0
 
 AVG_LEN = 10
 
@@ -45,9 +51,10 @@ class Traces():
     
     def update_center(self, pos, size):
         self.center.append([
-            (pos.x + size.x / 2) - (WITH / 2), 
-            (pos.y + size.y / 2) - (HIGHT / 2)])
-        self.direction = [self.center[0][0] - self.center[-1][0], self.center[0][1] - self.center[-1][1]]
+            (pos.x + size.x / 2) , 
+            (pos.y + size.y / 2)])
+        
+        self.direction = [self.center[-1][0] - self.center[0][0], self.center[-1][1] - self.center[0][1]]
         
 
     def area_update(self, a):

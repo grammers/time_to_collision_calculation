@@ -24,12 +24,24 @@ from cv_bridge import CvBridge
 
 # theses should be lanch param
 #sub_image_topic = "/bebop/image_raw"
-sub_image_topic = "/image_slow"
+#sub_image_topic = "/image_slow"
+sub_image_topic = "/jpg/image"
 pub_image_topic = "/bb/image_box"
 pub_trace = "/bb/trace"
 path = '/home/grammers/catkin_ws/src/nearCollision/data/'
 conf_thres = 0.5
 NMS_THRESH = 0.3
+
+# class list
+# CLASSES = ('__background__',
+#		   'aeroplane', 'bicycle', 'bird', 'boat',
+#		   'bottle', 'bus', 'car', 'cat', 'chair',
+#		   'cow', 'diningtable', 'dog', 'horse',
+#		   'motorbike', 'person', 'pottedplant',
+#		   'sheep', 'sofa', 'train', 'tvmonitor')
+
+cls_ind = 7 #car
+#cls_ind = 15 #human
 
 class Trace:
     ID = 0
@@ -221,7 +233,6 @@ class ROS_runner:
         
         scores, boxes = im_detect(self.sess, self.net, cv_image)
 
-        cls_ind = 15 
         cls = 'person'
                 
         cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
