@@ -24,8 +24,8 @@ from cv_bridge import CvBridge
 
 # theses should be lanch param
 #sub_image_topic = "/bebop/image_raw"
-#sub_image_topic = "/image_slow"
-sub_image_topic = "/jpg/image"
+sub_image_topic = "/image_slow"
+sub_file_image_topic = "/jpg/image"
 pub_image_topic = "/bb/image_box"
 pub_trace = "/bb/trace"
 path = '/home/grammers/catkin_ws/src/nearCollision/data/'
@@ -73,6 +73,8 @@ class Trace:
         msg.dimensions.x = self.bbox[2] - self.bbox[0]
         msg.dimensions.y = self.bbox[3] - self.bbox[1]
         msg.dimensions.z = 0
+        
+        #print (msg)
 
         return msg
 
@@ -83,7 +85,12 @@ class ROS_runner:
         
         self.trace = []
 
+        self.hight = 0
+        self.width = 0
+
         #ros setup
+        self.image_file_sub = rospy.Subscriber(
+            sub_file_image_topic, Image, self.callback)
         self.image_sub = rospy.Subscriber(
             sub_image_topic, Image, self.callback)
 
@@ -180,7 +187,7 @@ class ROS_runner:
     def min_matrix(self, cost, used_t, used_d):
         trace_min = -1
         det_min = -1
-        mini = 50
+        mini = 30
         for i in range(len(used_t)):
             for j in range(len(used_d)):
                 if i >= len(cost):
@@ -195,9 +202,29 @@ class ROS_runner:
 
         return trace_min, det_min
 
-    def vis_detections(self, dets, thresh=0.5):
+    def normalize(self, dets):
+        #print self.width, self.hight
+        for d in dets:
+            d[0] = d[0] / self.width
+            d[1] = d[1] / self.hight
+            d[2] = d[2] / self.width
+            d[3] = d[3] / self.hight
+        return dets
+
+    def zero_clean(self):
+        i = len(self.trace)
+        while i > 0:
+            i -= 1
+            if self.trace[i].active:
+                self.trace[i].active = False
+            else:
+                self.trace.pop(i)
+    
+
+    def detections(self, dets, thresh=0.5):
         inds = np.where(dets[:, -1] >= thresh)[0]
         if len(inds) == 0:
+            self.zero_clean()
             return 
         
         box = []
@@ -211,29 +238,33 @@ class ROS_runner:
             #    (int(bbox[2]), int(bbox[3])),
             #    (255, 255, 0), 2)
             
+        box = self.normalize(box)
         self.det_to_trace(box)
 
 
     def visualize(self, im):
         for t in self.trace:
+            print("error")
             # bbox[x,y, x,y]
-            cv2.rectangle(im, (int(t.bbox[0]), int(t.bbox[1])),
-                (int(t.bbox[2]), int(t.bbox[3])),
-                (255, 255, 0), 2)
+            #cv2.rectangle(im, (int(t.bbox[0] * self.width), int(t.bbox[1] * self.hight)),
+            #    (int(t.bbox[2] * self.width), int(t.bbox[3] * self.hight)),
+            #    (255, 255, 0), 2)
 
-            cv2.putText(im, str(t.id), (int(t.bbox[0]), int(t.bbox[3] - 2)),
-                cv2.FONT_HERSHEY_SIMPLEX, int(1), (255, 0, 0), 
-                int(2))
+            #cv2.putText(im, str(t.id), (int(t.bbox[0]), int(t.bbox[3] - 2)),
+            #    cv2.FONT_HERSHEY_SIMPLEX, int(1), (255, 0, 0), 
+            #    int(2))
             
         return im
 
 
     def callback(self, data):
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        self.hight, self.width, channels = cv_image.shape
         
+        ## detecton network
         scores, boxes = im_detect(self.sess, self.net, cv_image)
 
-        cls = 'person'
+        #cls = 'person'
                 
         cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
         cls_scores = scores[:, cls_ind]
@@ -241,9 +272,10 @@ class ROS_runner:
         dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(np.float32)
         keep = nms(dets, NMS_THRESH)
         dets = dets[keep, :]
-        self.vis_detections(dets, thresh=conf_thres )
-        
-        self.visualize(cv_image)
+        self.detections(dets, thresh=conf_thres )
+        ## 
+
+        #self.visualize(cv_image)
 
         trace_message = self.msg_builder(data.header)
         
