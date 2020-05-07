@@ -3,6 +3,7 @@
 import rospy
 from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
 from sensor_msgs.msg import Image
+from std_msgs.msg import Int32
 
 import cv2
 from cv_bridge import CvBridge
@@ -13,11 +14,13 @@ import copy
 sub_calk_data = '/cc/trace'
 image_fead = '/bb/image_box'
 image_vis = '/hp/image_vis'
+gole_topic = '/goal'
+heading_topic = '/heading/'
 HIGHT = 480
 WIDTH = 856
 
-HITBOX = 10
-SAFTI = 2
+HITBOX = 30
+SAFTI = 3
 
 class Trace():
     def __init__(self, box, width, hight):
@@ -63,6 +66,12 @@ class ROS_runner():
         self.img_sub = rospy.Subscriber(
             image_fead, Image, self.image)
 
+        self.gole_sub = rospy.Subscriber(
+            gole_topic, Int32, self.goal)
+
+        self.heading_pub = rospy.Publisher(
+            heading_topic, Int32, queue_size = 1)
+
         self.image_pub =  rospy.Publisher(
             image_vis, Image, queue_size = 10)
 
@@ -71,6 +80,7 @@ class ROS_runner():
         self.bridge = CvBridge()
         self.cv_image = np.zeros((self.hight, self.width, 3), np.uint8)
 
+        self.goal = 428 
         self.heading = 0
         
     def predict(self, boxes):
@@ -83,17 +93,32 @@ class ROS_runner():
         self.find_heading(risk)
         #print(risk)
 
+    def get_bounds(self, mid, rof, offset):
+        lover = mid - HITBOX * SAFTI + offset
+        higer = mid + HITBOX * SAFTI + offset
+        
+        if lover < 0:
+            higer += -lover
+            lover = 0
+        if higer >= rof:
+            lover -= higer - rof
+            higer = rof - 1
+
+        return lover, higer
+        
     def find_heading(self, risk):
-        mid = len(risk) / 2
+        mid = self.goal #len(risk) / 2
         minimum = 1 * 2 * HITBOX * SAFTI
-        self.heading = mid
+        self.heading = self.goal
 
         for offset in range(int(mid - HITBOX * SAFTI)):
-            current = self.sum_span(risk[mid - HITBOX * SAFTI + offset : mid + HITBOX * SAFTI + offset])
+            lover, higer = self.get_bounds(mid, len(risk), offset)
+            current = self.sum_span(risk[lover : higer])
             if minimum > current:
                 minimum = current
                 self.heading = mid + offset
-            current = self.sum_span(risk[mid - HITBOX * SAFTI - offset : mid + HITBOX * SAFTI - offset])
+            lover, higer = self.get_bounds(mid, len(risk), - offset)
+            current = self.sum_span(risk[lover : higer])
             if minimum > current:
                 minimum = current
                 self.heading = mid - offset
@@ -126,12 +151,15 @@ class ROS_runner():
                 cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 
                 int(1))
                 
-            ## hitbox
-            cv2.rectangle(im, (int(self.heading - HITBOX), int(self.hight / 2)), 
-                (int(self.heading + HITBOX), int(HITBOX + self.hight / 2)), 
-                (0, 255, 0), 2)
+        ## hitbox
+        cv2.rectangle(im, (int(self.heading - HITBOX), int(self.hight / 2)), 
+            (int(self.heading + HITBOX), int(HITBOX + self.hight / 2)), 
+            (0, 255, 0), 2)
 
         return im
+
+    def goal(self, data):
+        self.goal = data.data
 
     def image(self, data):
         self.cv_image = self.bridge.imgmsg_to_cv2(data,"bgr8")
@@ -148,6 +176,8 @@ class ROS_runner():
         
         self.predict(box_list)
 
+        
+        self.heading_pub.publish(self.heading)
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.visualize(box_list, copy.copy(self.cv_image)), "bgr8"))
 
 

@@ -40,8 +40,9 @@ NMS_THRESH = 0.3
 #		   'motorbike', 'person', 'pottedplant',
 #		   'sheep', 'sofa', 'train', 'tvmonitor')
 
-cls_ind = 7 #car
-#cls_ind = 15 #human
+#cls_ind = 7 #car
+cls_ind = 15 #human
+#cls_ind = [7, 15]
 
 class Trace:
     ID = 0
@@ -263,13 +264,12 @@ class ROS_runner:
         
         ## detecton network
         scores, boxes = im_detect(self.sess, self.net, cv_image)
-
+        
         #cls = 'person'
-                
         cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
         cls_scores = scores[:, cls_ind]
        
-        dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(np.float32)
+        dets =  np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(np.float32)
         keep = nms(dets, NMS_THRESH)
         dets = dets[keep, :]
         self.detections(dets, thresh=conf_thres )

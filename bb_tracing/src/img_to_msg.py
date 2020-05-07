@@ -11,7 +11,7 @@ import os
 
 img_pub_topic = '/jpg/image'
 img_path = '/home/grammers/xjob/indian_dataset/'
-start = 3000
+start = 4575
 stop = 20000
 
 class ROS_runner():

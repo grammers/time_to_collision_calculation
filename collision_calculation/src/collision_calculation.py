@@ -25,7 +25,7 @@ AVG_LEN = 10
 PIXEL_ANEL = math.radians(HIGHT / HIGHT_ANGLE)
 
 class Traces():
-    def __init__(self, ID, dist, frame):
+    def __init__(self, ID, dist, frame, dimensions):
         self.id = ID
         self.distance = deque(maxlen=AVG_LEN)
         self.distance.append(dist)
@@ -40,8 +40,8 @@ class Traces():
 
         self.frame_of_update = frame
 
-        self.withe = 0.0
-        self.hight = 0.0
+        self.withe = dimensions.x
+        self.hight = dimensions.y
 
     def avg_dist(self):
         dist = 0.0
@@ -160,7 +160,7 @@ class ROS_runner():
             if box.label in self.bboxes:
                 self.bboxes[box.label].update(new_distance, data.header.seq, box.dimensions)
             else:
-                self.bboxes.update({box.label : Traces(box.label, new_distance, data.header.seq)})
+                self.bboxes.update({box.label : Traces(box.label, new_distance, data.header.seq, box.dimensions)})
 
 
             self.bboxes[box.label].update_center(box.pose.position, box.dimensions)
