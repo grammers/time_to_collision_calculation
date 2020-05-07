@@ -177,7 +177,7 @@ class ROS_runner():
         self.predict(box_list)
 
         
-        self.heading_pub.publish(self.heading)
+        self.heading_pub.publish(self.heading - self.withe / 2)
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.visualize(box_list, copy.copy(self.cv_image)), "bgr8"))
 
 
