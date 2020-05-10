@@ -42,6 +42,10 @@ qtcreator-*
 /planning/docs
 /planning/src
 
+yolo/src/coco.names
+yolo/src/yolov3.cfg
+yolo/src/yolov3.weights
+
 *~
 
 # Emacs
