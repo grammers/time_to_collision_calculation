@@ -3,13 +3,14 @@
 import rospy
 from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
 from sensor_msgs.msg import Image
-from std_msgs.msg import Int32
+from std_msgs.msg import Float32
 
 import cv2
 from cv_bridge import CvBridge
 import numpy as np
 
 import copy
+import math
 
 sub_calk_data = '/cc/trace'
 image_fead = '/bb/image_box'
@@ -20,7 +21,9 @@ HIGHT = 480
 WIDTH = 856
 
 HITBOX = 30
-SAFTI = 3
+SAFTI = 4
+
+WIDTH_ANGLE = math.radians(80)
 
 class Trace():
     def __init__(self, box, width, hight):
@@ -67,10 +70,10 @@ class ROS_runner():
             image_fead, Image, self.image)
 
         self.gole_sub = rospy.Subscriber(
-            gole_topic, Int32, self.goal)
+            gole_topic, Float32, self.goal)
 
         self.heading_pub = rospy.Publisher(
-            heading_topic, Int32, queue_size = 1)
+            heading_topic, Float32, queue_size = 1)
 
         self.image_pub =  rospy.Publisher(
             image_vis, Image, queue_size = 10)
@@ -84,10 +87,12 @@ class ROS_runner():
         self.heading = 0
         
     def predict(self, boxes):
-        risk = [0.0 for i in range(self.width)]
+        risk = [-1.0 for i in range(self.width)]
 
         for b in boxes:
             for i in range(int(b.x1), int(b.x2)):
+                if i >= len(risk) or i < 0:
+                    continue
                 if risk[i] < b.d_area:
                     risk[i] = b.d_area
         self.find_heading(risk)
@@ -156,10 +161,28 @@ class ROS_runner():
             (int(self.heading + HITBOX), int(HITBOX + self.hight / 2)), 
             (0, 255, 0), 2)
 
+        ## GOAL
+        cv2.line(im, (self.goal, (self.hight / 2) - 5), (self.goal,
+            (self.hight / 2) + 5), (0, 255, 0), 1)
+        cv2.line(im, (self.goal -5, self.hight / 2), 
+            (self.goal + 5, self.hight / 2), (0, 255, 0), 1)
+
         return im
 
+    def heading_to_angle(self):
+        pix = self.heading - self.width / 2
+        rad_pix = WIDTH_ANGLE / self.width
+        referens = pix * rad_pix
+        return referens
+        
     def goal(self, data):
-        self.goal = data.data
+        #print("goal")
+        #print(data.data)
+        
+        self.goal = data.data / (WIDTH_ANGLE / self.width)
+        #print(self.goal)
+        self.goal = int(self.goal + (self.width / 2))
+        #print(self.goal)
 
     def image(self, data):
         self.cv_image = self.bridge.imgmsg_to_cv2(data,"bgr8")
@@ -176,8 +199,8 @@ class ROS_runner():
         
         self.predict(box_list)
 
-        
-        self.heading_pub.publish(self.heading - self.withe / 2)
+    
+        self.heading_pub.publish(self.heading_to_angle())
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.visualize(box_list, copy.copy(self.cv_image)), "bgr8"))
 
 
