@@ -99,7 +99,7 @@ class ROS_runner():
 
 if __name__ == "__main__":
     ros = ROS_runner()
-    rospy.init_node('bebop_turet')
+    rospy.init_node('bebop_hover')
 
     try:
         #ros.controller()
