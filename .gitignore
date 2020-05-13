@@ -42,9 +42,9 @@ qtcreator-*
 /planning/docs
 /planning/src
 
-yolo/src/coco.names
-yolo/src/yolov3.cfg
-yolo/src/yolov3.weights
+yolo/net/coco.names
+yolo/net/yolov3.cfg
+yolo/net/yolov3.weights
 
 *~
 
