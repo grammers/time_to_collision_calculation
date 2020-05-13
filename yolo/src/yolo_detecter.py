@@ -1,4 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+import sys
+print(sys.version)
 
 import cv2
 import numpy as np
@@ -8,8 +10,8 @@ import rospy
 from sensor_msgs.msg import Image
 from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
 
-#sub_image_topic = "/bebop/image_raw"
-sub_image_topic = "/image_slow"
+sub_image_topic = "/bebop/image_raw"
+#sub_image_topic = "/image_slow"
 pub_image_topic = "/bb/image_box"
 pub_bb_topic = "/yolo/bb_arr"
 CONFIDENCE_THRESHOLD = 0.6
@@ -31,6 +33,8 @@ class ROS_runner():
             pub_image_topic, Image, queue_size = 10)
         
         self.net = cv2.dnn.readNet(PATH + "yolov3.weights", PATH + "yolov3.cfg")
+        self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+        self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
         self.classes = []
         with open(PATH + "coco.names", "r") as f:
             self.classes = [line.strip() for line in f.readlines()]
