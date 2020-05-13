@@ -155,7 +155,7 @@ class ROS_runner():
     def callback(self, data):
         #print('callback')
         for box in data.boxes:
-            new_distance = self.distance_calk(box)
+            new_distance = 0 #self.distance_calk(box)
             
             if box.label in self.bboxes:
                 self.bboxes[box.label].update(new_distance, data.header.seq, box.dimensions)

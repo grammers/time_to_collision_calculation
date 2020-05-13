@@ -1,158 +1,207 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""@author: kyleguan
+"""
 
 import rospy
 from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+import numpy as np
+#import matplotlib.pyplot as plt
+#import glob
+#from moviepy.editor import VideoFileClip
+from collections import deque
+from sklearn.utils.linear_assignment_ import linear_assignment
+
+#import helpers
+#import detector
+import kalman_tracker
 
 pub_trace = "/bb/trace"
 sub_boxes = "/yolo/bb_arr"
-MAX_ERROR = 50
-
-class Trace:
-    ID = 0
-    def __init__(self, box):
-        Trace.ID += 1
-        self.id = Trace.ID
-
-        self.bbox = box
-        self.active = True
-
-    def update(self, det):
-        self.active = True
-        self.bbox = det
-
-    def to_msg(self):
-        msg = BoundingBox()
-        msg.label = self.id
-        msg.value = 0
-        
-        msg.pose.position.x = self.bbox[0]
-        msg.pose.position.y = self.bbox[1]
-        msg.pose.position.z = 0
-
-        msg.pose.orientation.x = 0 
-        msg.pose.orientation.y = 0 
-        msg.pose.orientation.x = 0 
-        msg.pose.orientation.w = 0 
-
-        msg.dimensions.x = self.bbox[2] - self.bbox[0]
-        msg.dimensions.y = self.bbox[3] - self.bbox[1]
-        msg.dimensions.z = 0
-        
-        #print (msg)
-
-        return msg
 
 class ROS_runner():
     def __init__(self):
+        # Global variables to be used by funcitons of VideoFileClop
+        self.frame_count = 0 # frame counter
+
+        self.max_age = 4  # no.of consecutive unmatched detection before 
+                     # a track is deleted
+
+        self.min_hits =1  # no. of consecutive matches needed to establish a track
+
+        self.tracker_list =[] # list for trackers
+
+        #debug = True
+
         self.boxes_sub = rospy.Subscriber(
             sub_boxes, BoundingBoxArray, self.callback)
-
-        # acctual result
         self.trace_pub = rospy.Publisher(
             pub_trace, BoundingBoxArray, queue_size = 10)
 
-        
-        self.trace = []
-
-    def msg_builder(self, header):
-        msg = BoundingBoxArray()
-        msg.header = header
-        
-        for t in self.trace:
-            if t.active:
-                msg.boxes.append(t.to_msg())
-            
-        return msg
-
-    def det_to_trace(self, dets):
-
-        if len(self.trace) == 0:
-            for d in dets:
-                self.trace.append(Trace(d))
-            return
-
-        cost = [[50 for j in range(len(self.trace))] for i in range(len(dets))] 
-        i = 0
-        j = 0
-        for t in self.trace:
-            j = 0
-            for d in dets:
-                cost[j][i] = abs(t.bbox[0] - d[0]) + abs(t.bbox[1] - d[1]) + abs(t.bbox[2] - d[2]) + abs(t.bbox[3] - d[3]) 
-
-                j +=1
-            i +=1
-
-        # find min val in cost
-        # assign that dets to trace
-        # lim max of.
-
-        # 2 x bol array dets and trace
-        # set false wen asined
-
-        # for true trace delet
-        # for true dets create trace
-        used_t = [True for t in self.trace]
-        used_d = [True for d in dets]
-    
-        for t in self.trace:
-            min_i, min_j = self.min_matrix(cost, used_t, used_d)
-            if min_i != -1:
-                (self.trace[min_i]).update(dets[min_j])
-                used_t[min_i] = False
-                used_d[min_j] = False
-        
-        i = len(self.trace)
-        while i > 0:
-            i -= 1
-            if used_t[i]:
-                if self.trace[i].active:
-                    self.trace[i].active = False
-                else:
-                    self.trace.pop(i)
-                #delet trace
-
-        for j, d in enumerate(dets):
-            if used_d[j]:
-                self.trace.append(Trace(d))
-                #create trace
-
-
-    def min_matrix(self, cost, used_t, used_d):
-        trace_min = -1
-        det_min = -1
-        mini = MAX_ERROR
-        for i in range(len(used_t)):
-            for j in range(len(used_d)):
-                if i >= len(cost):
-                    break
-                if j >= len(cost[0]):
-                    break
-
-                if cost[i][j] < mini and used_t[i] and used_d[j]:
-                    mini = cost[i][j]
-                    trace_min = i
-                    det_min = j
-
-        return trace_min, det_min
-
     def callback(self, data):
-        box = []
-        for boxes in data.boxes:
-            box.append([boxes.pose.position.x, boxes.pose.position.y,
-                boxes.pose.position.x + boxes.dimensions.x,
-                boxes.pose.position.y + boxes.dimensions.y])
-
-        self.det_to_trace(box)
-
-        trace_message = self.msg_builder(data.header)
+        boxes = []
+        for trk in data.boxes:
+            boxes.append([
+                trk.pose.position.y - trk.dimensions.y / 2,
+                trk.pose.position.x - trk.dimensions.x / 2,
+                trk.pose.position.y + trk.dimensions.y / 2,
+                trk.pose.position.x + trk.dimensions.x / 2])
+        for trk in boxes:
+            trk[0] *= 480
+            trk[1] *= 856
+            trk[2] *= 480
+            trk[3] *= 856
+        self.pipeline(boxes)
         
-        self.trace_pub.publish(trace_message)
+        msg = BoundingBoxArray()
+        msg.header = data.header
+        for trk in self.tracker_list:
+            msg.boxes.append(trk.to_msg())
+        self.trace_pub.publish(msg)
+            
 
-if __name__== '__main__':
+    def assign_detections_to_trackers(self, trackers, detections, iou_thrd = 0.3):
+        '''
+        From current list of trackers and new detections, output matched detections,
+        unmatchted trackers, unmatched detections.
+        '''    
+        
+        IOU_mat= np.zeros((len(trackers),len(detections)),dtype=np.float32)
+        for t,trk in enumerate(trackers):
+            #trk = convert_to_cv2bbox(trk) 
+            for d,det in enumerate(detections):
+             #   det = convert_to_cv2bbox(det)
+                IOU_mat[t,d] = box_iou2(trk,det) 
+        
+        # Produces matches       
+        # Solve the maximizing the sum of IOU assignment problem using the
+        # Hungarian algorithm (also known as Munkres algorithm)
+        
+        matched_idx = linear_assignment(-IOU_mat)        
+
+        unmatched_trackers, unmatched_detections = [], []
+        for t,trk in enumerate(trackers):
+            if(t not in matched_idx[:,0]):
+                unmatched_trackers.append(t)
+
+        for d, det in enumerate(detections):
+            if(d not in matched_idx[:,1]):
+                unmatched_detections.append(d)
+
+        matches = []
+       
+        # For creating trackers we consider any detection with an 
+        # overlap less than iou_thrd to signifiy the existence of 
+        # an untracked object
+        
+        for m in matched_idx:
+            if(IOU_mat[m[0],m[1]]<iou_thrd):
+                unmatched_trackers.append(m[0])
+                unmatched_detections.append(m[1])
+            else:
+                matches.append(m.reshape(1,2))
+        
+        if(len(matches)==0):
+            matches = np.empty((0,2),dtype=int)
+        else:
+            matches = np.concatenate(matches,axis=0)
+        
+        return matches, np.array(unmatched_detections), np.array(unmatched_trackers)       
+        
+
+
+    def pipeline(self, z_box):
+        '''
+        Pipeline function for detection and tracking
+        '''
+        
+        self.frame_count+=1
+        
+        x_box =[]
+        
+        if len(self.tracker_list) > 0:
+            for trk in self.tracker_list:
+                x_box.append(trk.box)
+        
+        
+        matched, unmatched_dets, unmatched_trks \
+        = self.assign_detections_to_trackers(x_box, z_box, iou_thrd = 0.3)  
+        #print(matched, unmatched_dets, unmatched_trks) 
+        # Deal with matched detections     
+        if matched.size >0:
+            for trk_idx, det_idx in matched:
+                z = z_box[det_idx]
+                z = np.expand_dims(z, axis=0).T
+                tmp_trk = self.tracker_list[trk_idx]
+                tmp_trk.kalman_filter(z)
+                xx = tmp_trk.x_state.T[0].tolist()
+                xx =[xx[0], xx[2], xx[4], xx[6]]
+                x_box[trk_idx] = xx
+                tmp_trk.box =xx
+                tmp_trk.hits += 1
+                tmp_trk.no_losses = 0
+        
+        # Deal with unmatched detections      
+        if len(unmatched_dets)>0:
+            for idx in unmatched_dets:
+                z = z_box[idx]
+                z = np.expand_dims(z, axis=0).T
+                tmp_trk = kalman_tracker.Tracker() # Create a new tracker
+                x = np.array([[z[0], 0, z[1], 0, z[2], 0, z[3], 0]]).T
+                tmp_trk.x_state = x
+                tmp_trk.predict_only()
+                xx = tmp_trk.x_state
+                xx = xx.T[0].tolist()
+                xx =[xx[0], xx[2], xx[4], xx[6]]
+                tmp_trk.box = xx
+                self.tracker_list.append(tmp_trk)
+                x_box.append(xx)
+        
+        # Deal with unmatched tracks       
+        if len(unmatched_trks)>0:
+            for trk_idx in unmatched_trks:
+                tmp_trk = self.tracker_list[trk_idx]
+                tmp_trk.no_losses += 1
+                tmp_trk.predict_only()
+                xx = tmp_trk.x_state
+                xx = xx.T[0].tolist()
+                xx =[xx[0], xx[2], xx[4], xx[6]]
+                tmp_trk.box =xx
+                x_box[trk_idx] = xx
+                       
+           
+        # The list of tracks to be annotated  
+        good_tracker_list =[]
+        for trk in self.tracker_list:
+            if ((trk.hits >= self.min_hits) and (trk.no_losses <=self.max_age)):
+                 good_tracker_list.append(trk)
+
+        # Book keeping
+        self.deleted_tracks = filter(lambda x: x.no_losses > self.max_age, self.tracker_list)  
+        
+        
+        self.tracker_list = [x for x in self.tracker_list if x.no_losses<=self.max_age]
+    
+def box_iou2(a, b):
+    '''
+    Helper funciton to calculate the ratio between intersection and the union of
+    two boxes a and b
+    a[0], a[1], a[2], a[3] <-> left, up, right, bottom
+    '''
+    
+    w_intsec = np.maximum (0, (np.minimum(a[2], b[2]) - np.maximum(a[0], b[0])))
+    h_intsec = np.maximum (0, (np.minimum(a[3], b[3]) - np.maximum(a[1], b[1])))
+    s_intsec = w_intsec * h_intsec
+    s_a = (a[2] - a[0])*(a[3] - a[1])
+    s_b = (b[2] - b[0])*(b[3] - b[1])
+  
+    return float(s_intsec)/(s_a + s_b -s_intsec)
+
+
+if __name__ == "__main__":    
     ros = ROS_runner()
     rospy.init_node('tracker', anonymous=True)
     try:
         rospy.spin()
     except KeyboardInterrupt:
-        print("Shitting down")
-    cv2.destroyAllWindows()
+        print("shutting Down")

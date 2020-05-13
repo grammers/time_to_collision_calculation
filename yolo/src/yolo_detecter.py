@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import sys
-print(sys.version)
 
 import cv2
 import numpy as np
@@ -14,9 +12,9 @@ sub_image_topic = "/bebop/image_raw"
 #sub_image_topic = "/image_slow"
 pub_image_topic = "/bb/image_box"
 pub_bb_topic = "/yolo/bb_arr"
-CONFIDENCE_THRESHOLD = 0.6
+CONFIDENCE_THRESHOLD = 0.5
 
-PATH = "/home/grammers/catkin_ws/src/time_to_collision_calculatin/yolo/src/"
+PATH = "/home/grammers/catkin_ws/src/time_to_collision_calculatin/yolo/net/"
 
 class ROS_runner():
     def __init__(self):
@@ -35,6 +33,7 @@ class ROS_runner():
         self.net = cv2.dnn.readNet(PATH + "yolov3.weights", PATH + "yolov3.cfg")
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+
         self.classes = []
         with open(PATH + "coco.names", "r") as f:
             self.classes = [line.strip() for line in f.readlines()]
@@ -54,22 +53,31 @@ class ROS_runner():
             for detection in out:
                 scores = detection[5:]
                 class_id = np.argmax(scores)
-                confidence = scores[class_id]
-                if confidence > CONFIDENCE_THRESHOLD:
-                    center_x = detection[0]
-                    center_y = detection[1]
-                    w = detection[2]
-                    h = detection[3]
-                    
-                    x = center_x - w / 2
-                    y = center_y - h / 2
-                    
-                    boxes.append([x, y, w, h])
-                    confidences.append(float(confidence))
-                    class_ids.append(class_id)
+                if self.classes[class_id] == "person":
+                    confidence = scores[class_id]
+                    if confidence > CONFIDENCE_THRESHOLD:
+                        center_x = detection[0]
+                        center_y = detection[1]
+                        w = detection[2]
+                        h = detection[3]
+                        
+                        x = center_x - w / 2
+                        y = center_y - h / 2
+                        
+                        boxes.append([x, y, w, h])
+                        confidences.append(float(confidence))
+                        class_ids.append(class_id)
 
         return boxes, confidences, class_ids
     
+    def duble_removal(self, boxes, confidences):
+        r_boxes = []
+        for box in boxes:
+            r_boxes.append([box[0] * self.width, box[1] * self.hight,
+                box[2] * self.width, box[3] * self.hight])
+
+        return cv2.dnn.NMSBoxes(r_boxes, confidences, 0.5, 0.4)
+
     def vizualize(self, img, indexes, boxes, class_ids):
         font = cv2.FONT_HERSHEY_PLAIN
         
@@ -81,19 +89,20 @@ class ROS_runner():
                     color = self.colors[i]
                     cv2.rectangle(img, (x,y), (x + w, y + h), color, 2)
                     cv2.putText(img, label, (x, y + 30), font, 3, color, 3)
-    def to_msg(self, boxes, class_ids, header):
+
+    def to_msg(self, boxes, class_ids, header, indexes):
         box_arr = BoundingBoxArray()
         box_arr.header = header
 
         for i in range(len(boxes)):
-            if str(self.classes[class_ids[i]]) == "person":
+            if str(self.classes[class_ids[i]]) == "person" and i in indexes:
                 x, y, w, h = boxes[i]
                 box = BoundingBox()
                 box.label = i
                 box.value = 0
         
-                box.pose.position.x = x
-                box.pose.position.y = y
+                box.pose.position.x = x + w / 2
+                box.pose.position.y = y + h / 2
                 box.pose.position.z = 0
 
                 box.pose.orientation.x = 0 
@@ -113,17 +122,20 @@ class ROS_runner():
     def callback(self, data):
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         self.hight, self.width, self.channels = cv_image.shape
+        
+        #print(self.hight, self.width)
 
-        blob = cv2.dnn.blobFromImage(cv_image, 0.00392, (320, 320), (0, 0, 0), True, crop=False)
+        # 320 or 416 or 608
+        blob = cv2.dnn.blobFromImage(cv_image, 0.00392, (608, 608), (0, 0, 0), True, crop=False)
         self.net.setInput(blob)
         outs = self.net.forward(self.output_layers)
 
         boxes, confidences, class_ids = self.box_extract(outs)
         
-        #indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        indexes = self.duble_removal(boxes, confidences)
 
         #self.vizualize(cv_image, indexes, boxes, class_ids)
-        self.bb_pub.publish(self.to_msg(boxes, class_ids, data.header))
+        self.bb_pub.publish(self.to_msg(boxes, class_ids, data.header, indexes))
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
 
 if __name__== '__main__':
