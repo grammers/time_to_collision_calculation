@@ -39,31 +39,25 @@ class ROS_runner():
         self.image_pub = rospy.Publisher(
             pub_image_topic, Image, queue_size = 10)
         
+        # net work sett upp
         self.net = cv2.dnn.readNet(PATH + "yolov3.weights", PATH + "yolov3.cfg")
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
         self.classes = []
-        #with open(PATH + "coco.names", "r") as f:
         with open(PATH + "my.names", "r") as f:
             self.classes = [line.strip() for line in f.readlines()]
         self.layer_names = self.net.getLayerNames()
         self.output_layers = [self.layer_names[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
-        self.colors = np.random.uniform(0,255, size=(len(self.classes), 3))
 
-        self.hight = 0
-        self.width = 0
-        self.channels = 0
-
+    # extracts bounding boxes form net.forward's output
+    # img is sent with so it is needed to pass allong
     def box_extract(self, outs, img):
         confidences = []
         bounding_box = []
         for out in outs:
             for detection in out:
-                #scores = detection[5:]
-                #class_id = np.argmax(scores)
-                #if self.classes[class_id] == "person":
-                    #confidence = scores[class_id]
+                # detection[5] == persion
                 confidence = detection[5]
                 if confidence > CONFIDENCE_THRESHOLD:
                     bbox = Bounding_box(img)
@@ -73,6 +67,7 @@ class ROS_runner():
 
         return bounding_box, confidences
     
+    # remove dubel detectons
     def duble_removal(self, boxes, confidences):
         r_boxes = []
         for box in boxes:
@@ -84,6 +79,7 @@ class ROS_runner():
 
         return cv2.dnn.NMSBoxes(r_boxes, confidences, CONFIDENCE_THRESHOLD, CONF_SPLIT)
 
+    #not in use used for debuging
     def vizualize(self, img, indexes, boxes):
         font = cv2.FONT_HERSHEY_PLAIN
         
