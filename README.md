@@ -12,7 +12,9 @@ To run start all nodes.
 `bebop_usgaes_api` is to start and stop the bebop.
 Comands are `takeoff`, `land` and `stop`.
 
-`turet` is a controll loop that is hovering and changes heading to avoid poinitin att pedestrians but yout keaping a goal heading in minde.
+`forward` is a controll loop that is moving slovly forward in a constant speed, wile the heading is adjusted to avoid collisions
+
+`heading` is a controll loop that is hovering and changes heading to avoid poinitin att pedestrians but yout keaping a goal heading in minde.
 
 `heading_prediction` sugest a heading to the controller.
 
