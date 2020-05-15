@@ -3,8 +3,13 @@
 """@author: kyleguan
 """
 
+import sys
+sys.path.insert(0, '/home/grammers/catkin_ws/src/time_to_collision_calculatin/lib')
+from bounding_box import Bounding_box
+
 import rospy
-from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+#from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+from vision_msgs.msg import Detection2DArray
 import numpy as np
 #import matplotlib.pyplot as plt
 #import glob
@@ -30,35 +35,42 @@ class ROS_runner():
         self.min_hits =1  # no. of consecutive matches needed to establish a track
 
         self.tracker_list =[] # list for trackers
+        self.id = 0
 
         #debug = True
 
         self.boxes_sub = rospy.Subscriber(
-            sub_boxes, BoundingBoxArray, self.callback)
+            sub_boxes, Detection2DArray, self.callback)
         self.trace_pub = rospy.Publisher(
-            pub_trace, BoundingBoxArray, queue_size = 10)
+            pub_trace, Detection2DArray, queue_size = 10)
 
     def callback(self, data):
         boxes = []
-        for trk in data.boxes:
-            boxes.append([
-                trk.pose.position.y - trk.dimensions.y / 2,
-                trk.pose.position.x - trk.dimensions.x / 2,
-                trk.pose.position.y + trk.dimensions.y / 2,
-                trk.pose.position.x + trk.dimensions.x / 2])
-        for trk in boxes:
-            trk[0] *= 480
-            trk[1] *= 856
-            trk[2] *= 480
-            trk[3] *= 856
+        for trk in data.detections:
+            bbox = Bounding_box(trk.source_img)
+            bbox.init_fr_msg(trk)
+            
+            wx, ny = bbox.get_NW_corner()
+            wx, ny = bbox.point_real(wx, ny)
+            ex, sy = bbox.get_SE_corner()
+            ex, sy = bbox.point_real(ex, sy)
+            boxes.append([ny, wx, sy, ex])
+
         self.pipeline(boxes)
         
-        msg = BoundingBoxArray()
+        msg = Detection2DArray()
         msg.header = data.header
         for trk in self.tracker_list:
-            msg.boxes.append(trk.to_msg())
+            try:
+                #print(trk.box[1])
+                bbox = Bounding_box(data.detections[0].source_img)
+                #print(data.detections[0].source_img.width)
+                bbox.init_fr_tracker(trk.box[1], trk.box[0], trk.box[3], trk.box[2], trk.id)
+                msg.detections.append(bbox.to_msg())
+                #print(bbox.x)
+            except IndexError:
+                print("empty")
         self.trace_pub.publish(msg)
-            
 
     def assign_detections_to_trackers(self, trackers, detections, iou_thrd = 0.3):
         '''

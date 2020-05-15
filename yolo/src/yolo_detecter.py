@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
+import sys
+sys.path.insert(0, '/home/grammers/catkin_ws/src/time_to_collision_calculatin/lib')
+from bounding_box import Bounding_box
 
 import cv2
 import numpy as np
@@ -6,13 +10,18 @@ from cv_bridge import CvBridge
 
 import rospy
 from sensor_msgs.msg import Image
-from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+#from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+from vision_msgs.msg import Detection2DArray
 
-sub_image_topic = "/bebop/image_raw"
-#sub_image_topic = "/image_slow"
+
+#sub_image_topic = "/bebop/image_raw"
+sub_image_topic = "/image_slow"
 pub_image_topic = "/bb/image_box"
 pub_bb_topic = "/yolo/bb_arr"
 CONFIDENCE_THRESHOLD = 0.5
+CONF_SPLIT = 0.4
+
+#print(cv2.__version__)
 
 PATH = "/home/grammers/catkin_ws/src/time_to_collision_calculatin/yolo/net/"
 
@@ -25,7 +34,7 @@ class ROS_runner():
             sub_image_topic, Image, self.callback)
         
         self.bb_pub = rospy.Publisher(
-            pub_bb_topic, BoundingBoxArray, queue_size = 10)
+            pub_bb_topic, Detection2DArray, queue_size = 10)
 
         self.image_pub = rospy.Publisher(
             pub_image_topic, Image, queue_size = 10)
@@ -35,7 +44,8 @@ class ROS_runner():
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
         self.classes = []
-        with open(PATH + "coco.names", "r") as f:
+        #with open(PATH + "coco.names", "r") as f:
+        with open(PATH + "my.names", "r") as f:
             self.classes = [line.strip() for line in f.readlines()]
         self.layer_names = self.net.getLayerNames()
         self.output_layers = [self.layer_names[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
@@ -45,83 +55,64 @@ class ROS_runner():
         self.width = 0
         self.channels = 0
 
-    def box_extract(self, outs):
-        class_ids = []
+    def box_extract(self, outs, img):
         confidences = []
-        boxes = []
+        bounding_box = []
         for out in outs:
             for detection in out:
-                scores = detection[5:]
-                class_id = np.argmax(scores)
-                if self.classes[class_id] == "person":
-                    confidence = scores[class_id]
-                    if confidence > CONFIDENCE_THRESHOLD:
-                        center_x = detection[0]
-                        center_y = detection[1]
-                        w = detection[2]
-                        h = detection[3]
-                        
-                        x = center_x - w / 2
-                        y = center_y - h / 2
-                        
-                        boxes.append([x, y, w, h])
-                        confidences.append(float(confidence))
-                        class_ids.append(class_id)
+                #scores = detection[5:]
+                #class_id = np.argmax(scores)
+                #if self.classes[class_id] == "person":
+                    #confidence = scores[class_id]
+                confidence = detection[5]
+                if confidence > CONFIDENCE_THRESHOLD:
+                    bbox = Bounding_box(img)
+                    bbox.set_bbox(detection[0], detection[1], detection[2], detection[3])
+                    bounding_box.append(bbox)
+                    confidences.append(float(confidence))
 
-        return boxes, confidences, class_ids
+        return bounding_box, confidences
     
     def duble_removal(self, boxes, confidences):
         r_boxes = []
         for box in boxes:
-            r_boxes.append([box[0] * self.width, box[1] * self.hight,
-                box[2] * self.width, box[3] * self.hight])
+            wx, ny = box.get_NW_corner()
+            wx, ny = box.point_real(wx, ny)
+            h = box.h_real()
+            w = box.w_real()
+            r_boxes.append([wx, ny, w, h])
 
-        return cv2.dnn.NMSBoxes(r_boxes, confidences, 0.5, 0.4)
+        return cv2.dnn.NMSBoxes(r_boxes, confidences, CONFIDENCE_THRESHOLD, CONF_SPLIT)
 
-    def vizualize(self, img, indexes, boxes, class_ids):
+    def vizualize(self, img, indexes, boxes):
         font = cv2.FONT_HERSHEY_PLAIN
         
         for i in range(len(boxes)):
-            if i in indexes:
-                x, y, w, h = boxes[i]
-                label = str(self.classes[class_ids[i]])
-                if label == "person":
-                    color = self.colors[i]
-                    cv2.rectangle(img, (x,y), (x + w, y + h), color, 2)
-                    cv2.putText(img, label, (x, y + 30), font, 3, color, 3)
+            #if i in indexes:
+            if True:
+                #x, y, w, h = boxes[i]
+                wx, ny = boxes[i].get_NW_corner()
+                ex, sy = boxes[i].get_SE_corner()
+                wx, ny = boxes[i].point_real(wx, ny)
+                ex, sy = boxes[i].point_real(ex, sy)
+                #color = self.colors[i]
+                cv2.rectangle(img, (int(wx), int(ny)), (int(ex), int(sy)), (255, 0,0), 2)
+                #cv2.putText(img, label, (x, y + 30), font, 3, color, 3)
 
-    def to_msg(self, boxes, class_ids, header, indexes):
-        box_arr = BoundingBoxArray()
+    def to_msg(self, boxes, header, indexes):
+        box_arr = Detection2DArray()
         box_arr.header = header
-
-        for i in range(len(boxes)):
-            if str(self.classes[class_ids[i]]) == "person" and i in indexes:
-                x, y, w, h = boxes[i]
-                box = BoundingBox()
-                box.label = i
-                box.value = 0
         
-                box.pose.position.x = x + w / 2
-                box.pose.position.y = y + h / 2
-                box.pose.position.z = 0
-
-                box.pose.orientation.x = 0 
-                box.pose.orientation.y = 0 
-                box.pose.orientation.x = 0 
-                box.pose.orientation.w = 0 
-
-                box.dimensions.x = w
-                box.dimensions.y = h
-                box.dimensions.z = 0
-
-                box_arr.boxes.append(box) 
+        for i, box in enumerate(boxes):
+            if i in indexes:
+                box_arr.detections.append(box.to_msg())
 
         return box_arr
 
 
     def callback(self, data):
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-        self.hight, self.width, self.channels = cv_image.shape
+        #self.hight, self.width, self.channels = cv_image.shape
         
         #print(self.hight, self.width)
 
@@ -130,13 +121,13 @@ class ROS_runner():
         self.net.setInput(blob)
         outs = self.net.forward(self.output_layers)
 
-        boxes, confidences, class_ids = self.box_extract(outs)
+        boxes, confidences = self.box_extract(outs, data)
         
         indexes = self.duble_removal(boxes, confidences)
 
-        #self.vizualize(cv_image, indexes, boxes, class_ids)
-        self.bb_pub.publish(self.to_msg(boxes, class_ids, data.header, indexes))
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
+        self.bb_pub.publish(self.to_msg(boxes, data.header, indexes))
+        #self.vizualize(cv_image, indexes, boxes)
+        #self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
 
 if __name__== '__main__':
     ros = ROS_runner()

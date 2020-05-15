@@ -6,7 +6,7 @@ Implement and test tracker
 import numpy as np
 from numpy import dot
 from scipy.linalg import inv, block_diag
-from jsk_recognition_msgs.msg import BoundingBox
+#from jsk_recognition_msgs.msg import BoundingBox
 
 
 
@@ -61,6 +61,7 @@ class Tracker(): # class for Kalman Filter-based tracker
         self.R_diag_array = self.R_scaler * np.array([self.L, self.L, self.L, self.L])
         self.R = np.diag(self.R_diag_array)
         
+    '''
     def to_msg(self):
         msg = BoundingBox()
         msg.label = self.id
@@ -80,6 +81,7 @@ class Tracker(): # class for Kalman Filter-based tracker
         msg.dimensions.z = 0
         
         return msg
+    '''
         
     def update_R(self):   
         R_diag_array = self.R_scaler * np.array([self.L, self.L, self.L, self.L])

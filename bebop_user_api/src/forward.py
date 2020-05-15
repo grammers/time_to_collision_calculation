@@ -15,7 +15,7 @@ goel_topic = '/goal'
 P = 50.0
 I = 1.0  #4.1
 D = 1.6
-FREQUENS = 0.2
+FREQUENS = 0.125
 
 class ROS_runner():
     def __init__(self):
@@ -50,9 +50,9 @@ class ROS_runner():
         pitch = math.asin(t2)
         t3 = 2.0 * (w * z + x * y)
         t4 = 1.0 - 2.0 * (y * y + z * z)
-        self.yaw = math.atan2(t3, t4)
+        yaw = math.atan2(t3, t4)
 
-        return roll, pitch
+        return roll, pitch, yaw
         
     def gole(self, data):
         px = data.pose.pose.position.x
@@ -64,7 +64,7 @@ class ROS_runner():
         az = data.pose.pose.orientation.z
         aw = data.pose.pose.orientation.w
 
-        roll, pitch = self.quaterion_to_euler(ax, ay, az, aw)
+        roll, pitch, self.yaw = self.quaterion_to_euler(ax, ay, az, aw)
         
         if self.goal_x - px == 0:
             g_yaw = 0
@@ -73,13 +73,14 @@ class ROS_runner():
         d_yaw = self.yaw - g_yaw
         self.error = self.target - self.yaw 
         self.gole_pub.publish(d_yaw)
-        self.controller()
+        #self.controller()
 
 
     def callback(self, data):
         self.target = data.data + self.yaw
         self.error = self.target - self.yaw
 
+        self.controller()
     
     def controller(self):
         msg = Twist()

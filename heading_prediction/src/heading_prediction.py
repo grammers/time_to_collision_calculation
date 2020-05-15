@@ -1,13 +1,18 @@
 #!/usr/bin/env python
 
 import rospy
-from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
+#from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
 from sensor_msgs.msg import Image
+from vision_msgs.msg import Detection2DArray
 from std_msgs.msg import Float32
 
 import cv2
 from cv_bridge import CvBridge
 import numpy as np
+
+import sys
+sys.path.insert(0, '/home/grammers/catkin_ws/src/time_to_collision_calculatin/lib')
+from bounding_box import Bounding_box
 
 import copy
 import math
@@ -25,49 +30,11 @@ SAFTI = 4
 
 WIDTH_ANGLE = math.radians(80)
 
-class Trace():
-    def __init__(self, box, width, hight):
-        #print width, hight
-        self.ID = box.label
-
-        self.d_area = box.value
-
-        self.pos_x = box.pose.position.x 
-        self.pos_y = box.pose.position.y 
-        
-        self.heading_x = box.pose.orientation.x * width
-        self.heading_y = box.pose.orientation.y * hight
-
-        #print box
-        self.withe = box.dimensions.x 
-        self.hight = box.dimensions.y
-        
-        #print(self.withe)
-        self.x1 = self.pos_x - (self.withe / 2)
-        self.y1 = self.pos_y - (self.hight / 2)
-        self.x2 = self.pos_x + (self.withe / 2)
-        self.y2 = self.pos_y + (self.hight / 2)
-
-        #print self.x1
-        #print self.y1
-
-        self.pos_x *= width
-        self.pos_y *= hight
-        self.withe *= width
-        self.hight *= hight
-        self.x1 *= width
-        self.y1 *= hight
-        self.x2 *= width
-        self.y2 *= hight
-
 
 class ROS_runner():
     def __init__(self):
         self.claculation_sub = rospy.Subscriber(
-            sub_calk_data, BoundingBoxArray, self.callback)
-
-        self.img_sub = rospy.Subscriber(
-            image_fead, Image, self.image)
+            sub_calk_data, Detection2DArray, self.callback)
 
         self.gole_sub = rospy.Subscriber(
             gole_topic, Float32, self.goal)
@@ -78,10 +45,10 @@ class ROS_runner():
         self.image_pub =  rospy.Publisher(
             image_vis, Image, queue_size = 10)
 
-        self.hight = 480
+        self.height = 480
         self.width = 856
         self.bridge = CvBridge()
-        self.cv_image = np.zeros((self.hight, self.width, 3), np.uint8)
+        self.cv_image = np.zeros((self.height, self.width, 3), np.uint8)
 
         self.goal = 428 
         self.heading = 0
@@ -90,11 +57,16 @@ class ROS_runner():
         risk = [-1.0 for i in range(self.width)]
 
         for b in boxes:
-            for i in range(int(b.x1), int(b.x2)):
+            wx, _ = b.get_NW_corner()
+            ex, _ = b.get_SE_corner()
+            wx *= self.width
+            ex *= self.width
+            
+            for i in range(int(wx), int(ex)):
                 if i >= len(risk) or i < 0:
                     continue
-                if risk[i] < b.d_area:
-                    risk[i] = b.d_area
+                if risk[i] < b.area:
+                    risk[i] = b.area
         self.find_heading(risk)
         #print(risk)
 
@@ -137,35 +109,40 @@ class ROS_runner():
 
     def visualize(self, boxes, im):
         for b in boxes:
+            wx, ny = b.get_NW_corner()
+            ex, sy = b.get_SE_corner()
+            wx, ny = b.point_real(wx, ny)
+            ex, sy = b.point_real(ex, sy)
+            #print(wx, ny, ex, sy)
             # bbox[x,y, x,y]
-            cv2.rectangle(im, (int(b.x1), int(b.y1)),
-                (int(b.x2), int(b.y2)),
+            cv2.rectangle(im, (int(wx), int(ny)),
+                (int(ex), int(sy)),
                 (255, 255, 0), 2)
 
-            cv2.putText(im, str(b.ID), (int(b.x1), int(b.y2 - 2)),
+            cv2.putText(im, str(b.id), (int(wx), int(sy - 2)),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 
                 int(2))
            
-            cv2.arrowedLine(im, (int(b.pos_x), int(b.pos_y)), 
-                (int(b.pos_x + b.heading_x), int(b.pos_y + b.heading_y)),
+            cv2.arrowedLine(im, (int(b.x), int(b.y)), 
+                (int(b.x + b.future_x), int(b.y + b.future_y)),
                 (0, 0, 255), int(1), tipLength = 0.5)
             
             #print b.d_area
 
-            cv2.putText(im, str(round(b.d_area,3)), (int(b.x1), int(b.y1 - 2)),
+            cv2.putText(im, str(round(b.area,3)), (int(wx + 2), int(ny - 10)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 
                 int(1))
                 
         ## hitbox
-        cv2.rectangle(im, (int(self.heading - HITBOX), int(self.hight / 2)), 
-            (int(self.heading + HITBOX), int(HITBOX + self.hight / 2)), 
+        cv2.rectangle(im, (int(self.heading - HITBOX), int(self.height / 2)), 
+            (int(self.heading + HITBOX), int(HITBOX + self.height / 2)), 
             (0, 255, 0), 2)
 
         ## GOAL
-        cv2.line(im, (self.goal, (self.hight / 2) - 5), (self.goal,
-            (self.hight / 2) + 5), (0, 255, 0), 1)
-        cv2.line(im, (self.goal -5, self.hight / 2), 
-            (self.goal + 5, self.hight / 2), (0, 255, 0), 1)
+        cv2.line(im, (self.goal, (self.height / 2) - 5), (self.goal,
+            (self.height / 2) + 5), (0, 255, 0), 1)
+        cv2.line(im, (self.goal -5, self.height / 2), 
+            (self.goal + 5, self.height / 2), (0, 255, 0), 1)
 
         return im
 
@@ -184,15 +161,20 @@ class ROS_runner():
         self.goal = int(self.goal + (self.width / 2))
         #print(self.goal)
 
-    def image(self, data):
-        self.cv_image = self.bridge.imgmsg_to_cv2(data,"bgr8")
-        self.hight, self.width, channesl = self.cv_image.shape
-
     def callback(self, data):
+        try:
+            self.cv_image = self.bridge.imgmsg_to_cv2(data.detections[0].source_img, "bgr8")
+            self.widht = data.detections[0].source_img.width
+            self.height = data.detections[0].source_img.height
+        except IndexError:
+            print("empty")
         box_list = [] 
 
-        for box in data.boxes:
-            box_list.append(Trace(box, self.width, self.hight))
+        for bbox in data.detections:
+            box = Bounding_box(bbox.source_img)
+            box.init_fr_msg(bbox)
+            box_list.append(box)
+
 
         #print(box_list[0].pos_x)
         #print(box_list[0].pos_y)
@@ -201,7 +183,7 @@ class ROS_runner():
 
     
         self.heading_pub.publish(self.heading_to_angle())
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.visualize(box_list, copy.copy(self.cv_image)), "bgr8"))
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.visualize(box_list, self.cv_image), "bgr8"))
 
 
 if __name__ == "__main__":
