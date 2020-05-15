@@ -10,8 +10,8 @@ from bounding_box import Bounding_box
 
 import math
 
-sub_bbox_topic = '/bb/trace'
-pub_extracted_data = '/cc/trace'
+sub_bbox_topic = '/bbox_avoid/trace'
+pub_extracted_data = '/bbox_avoid/calc'
 ## camera information
 #bebop
 #HIGHT = 480.0

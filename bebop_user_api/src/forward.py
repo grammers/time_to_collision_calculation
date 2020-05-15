@@ -8,8 +8,8 @@ from simple_pid import PID
 
 import math
 
-heading_topic = '/heading'
-goel_topic = '/goal'
+heading_topic = '/bbox_avoid/heading'
+goel_topic = '/bbox_avoid/goal'
 
 
 P = 50.0

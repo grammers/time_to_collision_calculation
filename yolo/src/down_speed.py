@@ -8,7 +8,7 @@ class ROS_runner:
         self.image_sub = rospy.Subscriber(
             '/bebop/image_raw', Image, self.callback)
         self.image_pub = rospy.Publisher(
-            '/image_slow', Image, queue_size = 1)
+            '/bbox_avoid/image_slow', Image, queue_size = 1)
 
 
     def callback(self, data):

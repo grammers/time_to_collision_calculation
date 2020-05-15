@@ -21,8 +21,8 @@ from sklearn.utils.linear_assignment_ import linear_assignment
 #import detector
 import kalman_tracker
 
-pub_trace = "/bb/trace"
-sub_boxes = "/yolo/bb_arr"
+pub_trace = "/bbox_avoid/trace"
+sub_boxes = "/bbox_avoid/detect"
 
 class ROS_runner():
     def __init__(self):

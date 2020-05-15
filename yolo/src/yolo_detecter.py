@@ -15,9 +15,9 @@ from vision_msgs.msg import Detection2DArray
 
 
 #sub_image_topic = "/bebop/image_raw"
-sub_image_topic = "/image_slow"
+sub_image_topic = "/bbox_avoid/image_slow"
 pub_image_topic = "/bb/image_box"
-pub_bb_topic = "/yolo/bb_arr"
+pub_bb_topic = "/bbox_avoid/detect"
 CONFIDENCE_THRESHOLD = 0.5
 CONF_SPLIT = 0.4
 
