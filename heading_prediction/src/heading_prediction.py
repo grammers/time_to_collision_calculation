@@ -17,11 +17,11 @@ from bounding_box import Bounding_box
 import copy
 import math
 
-sub_calk_data = '/bbox_acoid/calc'
+sub_calk_data = '/bbox_avoid/calc'
 #image_fead = '/bb/image_box'
 image_vis = '/bbox_avoid/viz'
 gole_topic = '/bbox_avoid/goal'
-heading_topic = '/bbox_acoid/heading'
+heading_topic = '/bbox_avoid/heading'
 HIGHT = 480
 WIDTH = 856
 
