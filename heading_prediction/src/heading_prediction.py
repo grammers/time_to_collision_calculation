@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import rospy
-#from jsk_recognition_msgs.msg import BoundingBox, BoundingBoxArray
 from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray
 from std_msgs.msg import Float32
@@ -18,26 +17,27 @@ import copy
 import math
 
 sub_calk_data = '/bbox_avoid/calc'
-#image_fead = '/bb/image_box'
 image_vis = '/bbox_avoid/viz'
-gole_topic = '/bbox_avoid/goal'
+angle_to_waypoint_topic = '/bbox_avoid/angle_waypoint'
 heading_topic = '/bbox_avoid/heading'
 HIGHT = 480
 WIDTH = 856
 
+# estimated collision size in one direction
 HITBOX = 30
-SAFTI = 4
+# nr times one size that should be safe zone
+SAFETY = 4
 
 WIDTH_ANGLE = math.radians(80)
 
 
 class ROS_runner():
     def __init__(self):
-        self.claculation_sub = rospy.Subscriber(
+        self.calculation_sub = rospy.Subscriber(
             sub_calk_data, Detection2DArray, self.callback)
 
-        self.gole_sub = rospy.Subscriber(
-            gole_topic, Float32, self.goal)
+        self.angle_waypoint_sub = rospy.Subscriber(
+            angle_to_waypoint_topic, Float32, self.waypoint)
 
         self.heading_pub = rospy.Publisher(
             heading_topic, Float32, queue_size = 1)
@@ -50,63 +50,88 @@ class ROS_runner():
         self.bridge = CvBridge()
         self.cv_image = np.zeros((self.height, self.width, 3), np.uint8)
 
-        self.goal = 428 
+        self.waypoint = 428 
         self.heading = 0
         
     def predict(self, boxes):
+        # generate a array withe collision risks
+        # -1 is max safety should probably be some thing ells.
+        # obstacles moving away (<0) is a safe to follow
+        # set to -1 to simplify testing
         risk = [-1.0 for i in range(self.width)]
 
+        # loop thru all boxes
         for b in boxes:
+            # extract corners and denormalise them
             wx, _ = b.get_NW_corner()
             ex, _ = b.get_SE_corner()
             wx *= self.width
             ex *= self.width
             
+            # up date collision risks
+            # for pixels in bounding boxes are the risk = area growth
+            # the highest risk for each pixel is used.
             for i in range(int(wx), int(ex)):
                 if i >= len(risk) or i < 0:
                     continue
                 if risk[i] < b.area:
                     risk[i] = b.area
+        # find the safest heading
         self.find_heading(risk)
         #print(risk)
 
-    def get_bounds(self, mid, rof, offset):
-        lover = mid - HITBOX * SAFTI + offset
-        higer = mid + HITBOX * SAFTI + offset
+    # calculate the upper and lover boundaries for a sup set
+    def get_bounds(self, mid, roof, offset):
+        lover = mid - HITBOX * SAFETY + offset
+        higher = mid + HITBOX * SAFETY + offset
         
+        # force to stick inside the image frame
         if lover < 0:
-            higer += -lover
+            higher += -lover
             lover = 0
-        if higer >= rof:
-            lover -= higer - rof
-            higer = rof - 1
+        if higher >= roof:
+            lover -= higher - roof
+            higher = roof - 1
 
-        return lover, higer
+        return lover, higher
         
+    # input risk array
     def find_heading(self, risk):
-        mid = self.goal #len(risk) / 2
-        minimum = 1 * 2 * HITBOX * SAFTI
-        self.heading = self.goal
+        # start search from waypoint
+        mid = self.waypoint #len(risk) / 2
+        # minimum initialized ass theoretical max dangers.
+        # multiplied by 2 to consider left and right side
+        minimum = 1 * 2 * HITBOX * SAFETY
+        # start width heading state to waypoint
+        self.heading = self.waypoint
 
-        for offset in range(int(mid - HITBOX * SAFTI)):
-            lover, higer = self.get_bounds(mid, len(risk), offset)
-            current = self.sum_span(risk[lover : higer])
+        # ind sub array of risk that has the lowest minimum
+        # lop thru all possible pixels is side fov
+        for offset in range(int(mid - HITBOX * SAFETY)):
+            # start with offset to the right
+            lover, higher = self.get_bounds(mid, len(risk), offset)
+            current = self.sum_span(risk[lover : higher])
+            # if current heading is safer store it ass a new heading
             if minimum > current:
                 minimum = current
                 self.heading = mid + offset
-            lover, higer = self.get_bounds(mid, len(risk), - offset)
-            current = self.sum_span(risk[lover : higer])
+            # check for offsets to the left
+            lover, higher = self.get_bounds(mid, len(risk), - offset)
+            current = self.sum_span(risk[lover : higher])
             if minimum > current:
                 minimum = current
                 self.heading = mid - offset
         
 
+    # tack a sub array
+    # returns the sum of the values in that array
     def sum_span(self, array):
-        summa = 0
+        sum = 0
         for s in array:
-            summa += s
-        return summa
+            sum += s
+        return sum
 
+    # draw stuff on image for visualisation
     def visualize(self, boxes, im):
         for b in boxes:
             wx, ny = b.get_NW_corner()
@@ -139,30 +164,37 @@ class ROS_runner():
             (0, 255, 0), 2)
 
         ## GOAL
-        cv2.line(im, (self.goal, (self.height / 2) - 5), (self.goal,
+        cv2.line(im, (self.waypoint, (self.height / 2) - 5), (self.waypoint,
             (self.height / 2) + 5), (0, 255, 0), 1)
-        cv2.line(im, (self.goal -5, self.height / 2), 
-            (self.goal + 5, self.height / 2), (0, 255, 0), 1)
+        cv2.line(im, (self.waypoint -5, self.height / 2), 
+            (self.waypoint + 5, self.height / 2), (0, 255, 0), 1)
 
         return im
 
+        # convert pixel heading to angel
     def heading_to_angle(self):
-        pix = self.heading - self.width / 2
-        rad_pix = WIDTH_ANGLE / self.width
-        referens = pix * rad_pix
-        return referens
-        
-    def goal(self, data):
-        #print("goal")
-        #print(data.data)
-        
-        self.goal = data.data / (WIDTH_ANGLE / self.width)
-        #print(self.goal)
-        self.goal = int(self.goal + (self.width / 2))
-        #print(self.goal)
+        # offset sow center pixels is 0
+        pixel_heading = self.heading - self.width / 2
+        # nr radians per pixel
+        radian_pixel = WIDTH_ANGLE / self.width
+        # nr pixels of from center time radians per pixel give a angel in radians
+        angle_to_waypoint = pixel_heading * radian_pixel
+        return angle_to_waypoint
+    
+    # get angel to next waypoint
+    # convert angle to pixels
+    def waypoint(self, data):
+        # angel to next waypoint / angel per pixel
+        # returns the numbers of pixels that corresponds to the angle
+        self.waypoint = data.data / (WIDTH_ANGLE / self.width)
+        # angle 0 is start ahead
+        # offset sow mid off image are strait ahead
+        self.waypoint = int(self.waypoint + (self.width / 2))
 
+    ## callback for new frames with bounding boxes
     def callback(self, data):
         try:
+            # read data about new image
             self.cv_image = self.bridge.imgmsg_to_cv2(data.detections[0].source_img, "bgr8")
             self.widht = data.detections[0].source_img.width
             self.height = data.detections[0].source_img.height
@@ -170,15 +202,14 @@ class ROS_runner():
             print("empty")
         box_list = [] 
 
+        # extract bounding boxes form messages
         for bbox in data.detections:
             box = Bounding_box(bbox.source_img)
             box.init_fr_msg(bbox)
             box_list.append(box)
 
-
-        #print(box_list[0].pos_x)
-        #print(box_list[0].pos_y)
         
+        # calculate a suggested heading
         self.predict(box_list)
 
     
@@ -188,7 +219,7 @@ class ROS_runner():
 
 if __name__ == "__main__":
     ros = ROS_runner()
-    rospy.init_node('heading_predicter')
+    rospy.init_node('heading_predictor')
 
     try:
         rospy.spin()
