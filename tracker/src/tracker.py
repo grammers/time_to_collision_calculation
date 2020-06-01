@@ -207,6 +207,8 @@ def box_iou2(a, b):
     s_a = (a[2] - a[0])*(a[3] - a[1])
     s_b = (b[2] - b[0])*(b[3] - b[1])
   
+    if s_a == 0 and s_b == 0 and s_intsec == 0:
+        return 0
     return float(s_intsec)/(s_a + s_b -s_intsec)
 
 

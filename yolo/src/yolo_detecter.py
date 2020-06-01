@@ -95,13 +95,18 @@ class ROS_runner():
                 cv2.rectangle(img, (int(wx), int(ny)), (int(ex), int(sy)), (255, 0,0), 2)
                 #cv2.putText(img, label, (x, y + 30), font, 3, color, 3)
 
-    def to_msg(self, boxes, header, indexes):
+    def to_msg(self, boxes, header, indexes, img):
         box_arr = Detection2DArray()
         box_arr.header = header
         
+        any_detect = False
         for i, box in enumerate(boxes):
             if i in indexes:
                 box_arr.detections.append(box.to_msg())
+                any_detect = True
+        if not any_detect:
+            box_arr.detections.append(Bounding_box(img).to_msg())
+            
 
         return box_arr
 
@@ -121,7 +126,7 @@ class ROS_runner():
         
         indexes = self.duble_removal(boxes, confidences)
 
-        self.bb_pub.publish(self.to_msg(boxes, data.header, indexes))
+        self.bb_pub.publish(self.to_msg(boxes, data.header, indexes, data))
         #self.vizualize(cv_image, indexes, boxes)
         #self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
 
