@@ -1,4 +1,6 @@
-#OpenCV with CUDA
+#Dependesis
+OpenCV with CUDA
+https://www.pyimagesearch.com/2020/02/03/how-to-use-opencvs-dnn-module-with-nvidia-gpus-cuda-and-cudnn/
 
 ##Used imports
 sys

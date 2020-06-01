@@ -4,7 +4,7 @@ import rospy
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
 
-waypoint_topic = '/bbox_avoid/waipoint'
+waypoint_topic = '/bbox_avoid/waypoint'
 presition = 0.5
 
 class ROS_runner():
@@ -31,11 +31,11 @@ class ROS_runner():
     def callback(self, data):
         curent_point = data.pose.pose.position
 
-        if curent_point.x < self.path[i].x + presition and curent_point.x > self.path[i].x - presition: 
-            if curent_point.y < self.path[i].y + presition and curent_point.y > self.path[i].y - presition: 
-                if curent_point.z < self.path[i].z + presition and curent_point.z > self.path[i].z - presition: 
+        if curent_point.x < self.path[self.index].x + presition and curent_point.x > self.path[self.index].x - presition: 
+            if curent_point.y < self.path[self.index].y + presition and curent_point.y > self.path[self.index].y - presition: 
+                if curent_point.z < self.path[self.index].z + presition and curent_point.z > self.path[self.index].z - presition: 
                     self.index = (self.index + 1) % len(self.path)
-                    self.waypoint_topic.publish(self.path[i])
+                    self.waypoint_topic.publish(self.path[self.index])
 
 
 if __name__ == '__main__':

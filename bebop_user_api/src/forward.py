@@ -23,7 +23,7 @@ class ROS_runner():
             heading_topic, Float32, self.callback)
 
         self.pose_sub = rospy.Subscriber(
-            'bebop/odom', Odometry, self.waypoint)
+            'bebop/odom', Odometry, self.odom)
 
         self.waypoint_sub = rospy.Subscriber(
             waypoint_topic, Point, self.waypoint)
@@ -70,7 +70,7 @@ class ROS_runner():
         return roll, pitch, yaw
         
     # get odom update
-    def waypoint(self, data):
+    def odom(self, data):
         px = data.pose.pose.position.x
         py = data.pose.pose.position.y
         pz = data.pose.pose.position.z
