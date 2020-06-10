@@ -12,7 +12,7 @@ class ROS_runner:
 
 
     def callback(self, data):
-        self.counter = (self.counter + 1) % 3
+        self.counter = (self.counter + 1) % 2 #3
         if self.counter == 0:
             self.image_pub.publish(data)
 

@@ -24,9 +24,9 @@ HIGHT = 480
 WIDTH = 856
 
 # estimated collision size in one direction
-HITBOX = 30
+HITBOX = 50
 # nr times one size that should be safe zone
-SAFETY = 4
+SAFETY = 5
 
 WIDTH_ANGLE = math.radians(80)
 
@@ -87,11 +87,13 @@ class ROS_runner():
         
         # force to stick inside the image frame
         if lover < 0:
-            higher += -lover
             lover = 0
-        if higher >= roof:
-            lover -= higher - roof
+            if higher < HITBOX:
+                higher = HITBOX
+        elif higher >= roof:
             higher = roof - 1
+            if lover > roof - HITBOX:
+                lover = roof - HITBOX
 
         return lover, higher
         
@@ -104,10 +106,12 @@ class ROS_runner():
         minimum = 1 * 2 * HITBOX * SAFETY
         # start width heading state to waypoint
         self.heading = self.waypoint
+        
+        temp_debug = 0, 0
 
         # ind sub array of risk that has the lowest minimum
         # lop thru all possible pixels is side fov
-        for offset in range(int(mid - HITBOX * SAFETY)):
+        for offset in range(self.width / 2): #int(mid - HITBOX )): #* SAFETY)):
             # start with offset to the right
             lover, higher = self.get_bounds(mid, len(risk), offset)
             current = self.sum_span(risk[lover : higher])
@@ -115,12 +119,17 @@ class ROS_runner():
             if minimum > current:
                 minimum = current
                 self.heading = mid + offset
+                temp_debug = lover, higher
             # check for offsets to the left
             lover, higher = self.get_bounds(mid, len(risk), - offset)
             current = self.sum_span(risk[lover : higher])
             if minimum > current:
                 minimum = current
                 self.heading = mid - offset
+                temp_debug = lover, higher
+        
+        print temp_debug
+        print minimum, self.heading
         
 
     # tack a sub array
@@ -132,7 +141,7 @@ class ROS_runner():
         return sum
 
     # draw stuff on image for visualisation
-    def visualize(self, boxes, im):
+    def visualize(self, boxes, im, angle):
         for b in boxes:
             wx, ny = b.get_NW_corner()
             ex, sy = b.get_SE_corner()
@@ -154,7 +163,7 @@ class ROS_runner():
             
             #print b.d_area
 
-            cv2.putText(im, str(round(b.area,3)), (int(wx + 2), int(ny - 10)),
+            cv2.putText(im, str(round(b.area,3)), (int(wx + 2), int(ny + 10)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 
                 int(1))
                 
@@ -162,6 +171,10 @@ class ROS_runner():
         cv2.rectangle(im, (int(self.heading - HITBOX), int(self.height / 2)), 
             (int(self.heading + HITBOX), int(HITBOX + self.height / 2)), 
             (0, 255, 0), 2)
+
+        ## hitbox angle
+        cv2.putText(im, str(round(angle,4)), (int(self.heading - 2), int(self.height / 2 - 2)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), int(1))
 
         ## GOAL
         cv2.line(im, (self.waypoint, (self.height / 2) - 5), (self.waypoint,
@@ -212,9 +225,10 @@ class ROS_runner():
         # calculate a suggested heading
         self.predict(box_list)
 
-    
-        self.heading_pub.publish(self.heading_to_angle())
-        self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.visualize(box_list, self.cv_image), "bgr8"))
+        angle_sugestion = self.heading_to_angle() 
+        self.heading_pub.publish(angle_sugestion)
+        self.image_pub.publish(self.bridge.cv2_to_imgmsg(
+            self.visualize(box_list, self.cv_image, angle_sugestion), "bgr8"))
 
 
 if __name__ == "__main__":

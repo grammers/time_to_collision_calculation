@@ -78,6 +78,10 @@ class Bounding_box():
             self.area += 0.5
         if y > 0.9:
             self.area += 0.5
+        if self.area > 1:
+            self.area = 1
+
+
     def update_tradj(self):
         self.futrue_x = self.pos_history[-1][0] - self.pos_history[0][0]
         self.future_y = self.pos_history[-1][1] - self.pos_history[0][1]
