@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import rospy
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Float32MultiArray
 from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry
 from simple_pid import PID
@@ -21,7 +21,7 @@ FREQUENCY = 0.4
 class ROS_runner():
     def __init__(self):
         self.heading_sub = rospy.Subscriber(
-            heading_topic, Float32, self.callback)
+            heading_topic, Float32MultiArray, self.callback)
 
         self.pose_sub = rospy.Subscriber(
             'bebop/odom', Odometry, self.odom)
@@ -36,11 +36,13 @@ class ROS_runner():
             angle_to_waypoint_topic, Float32, queue_size = 1)
 
         self.pid = PID(P, I, D, sample_time = FREQUENCY, output_limits=(-100,100))
+        self.pid_z = PID(10, 0, 0.5, sample_time = FREQUENCY, output_limits=(-100,100))
 
         # desired heading
         self.angle_to_waypoint = 0.0
         # current heading
         self.yaw = 0.0
+        self.z = 0.0
         # heading error
         self.error = 0.0
 
@@ -76,7 +78,7 @@ class ROS_runner():
         print "odom"
         px = data.pose.pose.position.x
         py = data.pose.pose.position.y
-        pz = data.pose.pose.position.z
+        self.z = data.pose.pose.position.z
         
         ax = data.pose.pose.orientation.x
         ay = data.pose.pose.orientation.y
@@ -86,7 +88,7 @@ class ROS_runner():
         # get current orientation
         roll, pitch, self.yaw = self.quaterion_to_euler(ax, ay, az, aw)
 
-        print px, py, pz, self.yaw
+        #print px, py, pz, self.yaw
         
         # avoid division with 0
         if self.waypoint_x - px == 0:
@@ -133,21 +135,21 @@ class ROS_runner():
     def callback(self, data):
         #self.angle_to_waypoint = data.data + self.yaw
         #self.error = self.angle_to_waypoint - self.yaw
-        self.error = data.data
+        self.error = data.data[0]
 
-        self.controller()
+        self.controller(data.data[1])
     
-    def controller(self):
+    def controller(self, danger):
         msg = Twist()
-
+        
         # constant throttle ahead
         #print self.error
-        if abs(self.angle_to_waypoint) > math.pi / 4: 
+        if abs(self.angle_to_waypoint) > math.pi / 4 or danger >= 0:
             msg.linear.x = 0
         else:
             msg.linear.x = 0.05
         msg.linear.y = 0
-        msg.linear.z = 0
+        msg.linear.z = self.pid_z(self.z - 1.3) / 100
 
         msg.angular.x = 0
         msg.angular.y = 0

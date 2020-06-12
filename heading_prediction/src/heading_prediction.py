@@ -3,7 +3,7 @@
 import rospy
 from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Float32MultiArray
 
 import cv2
 from cv_bridge import CvBridge
@@ -26,7 +26,7 @@ WIDTH = 856
 # estimated collision size in one direction
 HITBOX = 50
 # nr times one size that should be safe zone
-SAFETY = 5
+SAFETY = 5.5
 
 WIDTH_ANGLE = math.radians(80)
 
@@ -40,7 +40,7 @@ class ROS_runner():
             angle_to_waypoint_topic, Float32, self.waypoint)
 
         self.heading_pub = rospy.Publisher(
-            heading_topic, Float32, queue_size = 1)
+            heading_topic, Float32MultiArray, queue_size = 1)
 
         self.image_pub =  rospy.Publisher(
             image_vis, Image, queue_size = 10)
@@ -52,6 +52,7 @@ class ROS_runner():
 
         self.waypoint = 428 
         self.heading = 0
+        self.minimum = 0
         
     def predict(self, boxes):
         # generate a array withe collision risks
@@ -94,8 +95,12 @@ class ROS_runner():
             higher = roof - 1
             if lover > roof - HITBOX:
                 lover = roof - HITBOX
+        
+        lover = int(lover)
+        higher = int(higher)
 
         return lover, higher
+
         
     # input risk array
     def find_heading(self, risk):
@@ -103,7 +108,7 @@ class ROS_runner():
         mid = self.waypoint #len(risk) / 2
         # minimum initialized ass theoretical max dangers.
         # multiplied by 2 to consider left and right side
-        minimum = 1 * 2 * HITBOX * SAFETY
+        self.minimum = 1 * 2 * HITBOX * SAFETY
         # start width heading state to waypoint
         self.heading = self.waypoint
         
@@ -116,20 +121,20 @@ class ROS_runner():
             lover, higher = self.get_bounds(mid, len(risk), offset)
             current = self.sum_span(risk[lover : higher])
             # if current heading is safer store it ass a new heading
-            if minimum > current:
-                minimum = current
+            if self.minimum > current:
+                self.minimum = current
                 self.heading = mid + offset
                 temp_debug = lover, higher
             # check for offsets to the left
             lover, higher = self.get_bounds(mid, len(risk), - offset)
             current = self.sum_span(risk[lover : higher])
-            if minimum > current:
-                minimum = current
+            if self.minimum > current:
+                self.minimum = current
                 self.heading = mid - offset
                 temp_debug = lover, higher
         
         print temp_debug
-        print minimum, self.heading
+        print self.minimum, self.heading
         
 
     # tack a sub array
@@ -138,6 +143,9 @@ class ROS_runner():
         sum = 0
         for s in array:
             sum += s
+
+        if len(array) < 2 * HITBOX * SAFETY:
+            sum += -1.0 * (2 * HITBOX * SAFETY - len(array))
         return sum
 
     # draw stuff on image for visualisation
@@ -226,7 +234,9 @@ class ROS_runner():
         self.predict(box_list)
 
         angle_sugestion = self.heading_to_angle() 
-        self.heading_pub.publish(angle_sugestion)
+        msg = Float32MultiArray()
+        msg.data = [angle_sugestion, self.minimum]
+        self.heading_pub.publish(msg)
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(
             self.visualize(box_list, self.cv_image, angle_sugestion), "bgr8"))
 

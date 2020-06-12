@@ -20,7 +20,7 @@ class ROS_runner():
         #self.path_builder(0.0, 0.0, 1.3)
         #self.path_builder(0.0, 5.0, 1.3)
         #self.path_builder(0.0, 0.0, 1.3)
-        self.path_builder(10.0, 0.0, 1.3)
+        self.path_builder(15.0, 0.0, 1.3)
         self.path_builder(0.0, 0.0, 1.3)
         #self.path_builder(0.0, -5.0, 1.3)
         #self.path_builder(0.0, 0.0, 1.3)
