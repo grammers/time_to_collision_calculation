@@ -6,6 +6,11 @@ It is ment to be pared with [bebop atonumus](https://bebop-autonomy.readthedocs.
 ## requierment
 For it to work do you need to download thes [files](https://drive.google.com/drive/folders/1Z-A-dWUQ_Z43smqZgl2QOppFCqUcJCl3?usp=sharing) and change the variabel `PATH` in yolo_detecter.py
 
+```
+$ rosdep update
+$ rosdep install --from-paths src -i
+```
+
 ## Usgae
 To run start all nodes.
 
