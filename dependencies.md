@@ -29,7 +29,10 @@ math
 Other dependensis
 BebopAutonmus
 
+```
 pip install rospkg
 pip install catkin-pkg
 pip install empy
 pip install pyyaml
+pip install sklearn
+```
